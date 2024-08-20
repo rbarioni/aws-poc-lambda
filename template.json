@@ -1,0 +1,326 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Description": "Template para teste de SQS e DLQ",
+	"Parameters": {
+		"DeployLambdaBucket": {
+			"Description": "Nome do bucket de deploy dos lambdas",
+			"Type": "String",
+			"MinLength": 1,
+			"MaxLength": 256
+		},
+		"DeployLambdaFileName": {
+			"Description": "Nome do arquivo JAR para deploy dos lambdas",
+			"Type": "String",
+			"MinLength": 1,
+			"MaxLength": 256
+		}
+	},
+	"Resources": {
+		"SQSQueueNotificationsDLQ2": {
+			"Type" : "AWS::SQS::Queue",
+			"Properties" : {
+				"VisibilityTimeout": 180,
+				"QueueName" : "sqs-notification-enrichment-dlq-2.fifo",
+				"FifoQueue": true,
+				"DelaySeconds": 300
+			}
+		},
+		"SQSQueueNotificationsDLQ1": {
+			"Type" : "AWS::SQS::Queue",
+			"Properties" : {
+				"VisibilityTimeout": 180,
+				"QueueName" : "sqs-notification-enrichment-dlq-1.fifo",
+				"FifoQueue": true,
+				"DelaySeconds": 300,
+				"RedrivePolicy": { 
+					"deadLetterTargetArn" : { "Fn::GetAtt" : ["SQSQueueNotificationsDLQ2", "Arn"] },
+					"maxReceiveCount" : 4
+				}
+			}
+		},
+		"SQSQueueNotifications": {
+			"Type" : "AWS::SQS::Queue",
+			"Properties" : {
+				"VisibilityTimeout": 180,
+				"QueueName" : "sqs-notification-enrichment.fifo",
+				"FifoQueue": true,
+				"RedrivePolicy": { 
+					"deadLetterTargetArn" : { "Fn::GetAtt" : ["SQSQueueNotificationsDLQ1", "Arn"] },
+					"maxReceiveCount" : 1
+				}
+			}
+		},
+
+		"NotificationLambdaRole": {
+			"DependsOn":["SQSQueueNotifications"],
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Principal": {
+								"Service": [
+									"lambda.amazonaws.com"
+								]
+							},
+							"Action": [
+								"sts:AssumeRole"
+							]
+						}
+					]
+				},
+				"ManagedPolicyArns": [
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+				],
+				"Policies": [
+					{
+						"PolicyName": "notification-enrichment-policy",
+						"PolicyDocument": {
+							"Version": "2012-10-17",
+							"Statement": [
+								{
+									"Effect": "Allow",
+									"Action": [
+										"lambda:CreateEventSourceMapping",
+										"lambda:ListEventSourceMappings",
+										"lambda:ListFunctions"
+									],
+									"Resource": [
+									{
+										"Fn::GetAtt" : ["SQSQueueNotifications", "Arn"]
+									},
+									{
+										"Fn::GetAtt" : ["SQSQueueNotificationsDLQ1", "Arn"]
+									},
+									{
+										"Fn::GetAtt" : ["SQSQueueNotificationsDLQ2", "Arn"]
+									}
+									]
+								},
+								{
+									"Effect": "Allow",
+									"Action": [
+										"sqs:CreateQueue",
+										"sqs:DeleteMessage",
+										"sqs:GetQueueAttributes",
+										"sqs:ReceiveMessage",
+										"sqs:SendMessage",
+										"sqs:SendMessageBatch"
+									],
+									"Resource": [
+									{
+										"Fn::GetAtt" : ["SQSQueueNotifications", "Arn"]
+									},
+									{
+										"Fn::GetAtt" : ["SQSQueueNotificationsDLQ1", "Arn"]
+									},
+									{
+										"Fn::GetAtt" : ["SQSQueueNotificationsDLQ2", "Arn"]
+									}
+									]
+								},
+								{
+									"Effect": "Allow",
+									"Action": [
+										"s3:GetObject",
+										"s3:ListObjects"
+									],
+									"Resource": [
+									{
+										"Fn::Join": [
+										"",
+										[
+										"arn:aws:s3:::",
+										{
+											"Fn::Sub": "${DeployLambdaBucket}"
+										}
+										]
+									]
+									},
+									{
+										"Fn::Join": [
+										"",
+										[
+										"arn:aws:s3:::",
+										{
+											"Fn::Sub": "${DeployLambdaBucket}"
+										},
+										"/*"
+										]
+									]
+									}
+									]
+								},
+								{
+									"Effect": "Allow",
+									"Action": [
+										"lambda:InvokeFunction"
+									],
+									"Resource": "*"
+								}
+							]
+						}
+					}
+				],
+				"Path": "/",
+				"RoleName": "notification-enrichment-role"
+			}
+		},
+		"LambdaKinesis": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Code": {
+					"S3Bucket": {
+						"Fn::Sub": "${DeployLambdaBucket}"
+					},
+					"S3Key": {
+						"Fn::Sub": "${DeployLambdaFileName}"
+					}
+				},
+				"FunctionName":"lambda-kinesis",
+				"Handler": "com.capco.sqs.handler.LambdaKinesis::handleRequest",
+				"MemorySize": 768,
+				"Timeout": "30",
+				"Role": {
+					"Fn::GetAtt": [
+						"NotificationLambdaRole",
+						"Arn"
+					]
+				},
+				"Runtime": "java11"
+			}
+		},
+		"LambdaSQS": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Code": {
+					"S3Bucket": {
+						"Fn::Sub": "${DeployLambdaBucket}"
+					},
+					"S3Key": {
+						"Fn::Sub": "${DeployLambdaFileName}"
+					}
+				},
+				"FunctionName":"lambda-sqs",
+				"Handler": "com.capco.sqs.handler.LambdaSQS::handleRequest",
+				"MemorySize": 768,
+				"Timeout": "30",
+				"Role": {
+					"Fn::GetAtt": [
+						"NotificationLambdaRole",
+						"Arn"
+					]
+				},
+				"Runtime": "java11"
+			}
+		},
+		"LambdaSQSEventSourceMapping":{
+			"DependsOn":"LambdaSQS",
+			"Type" : "AWS::Lambda::EventSourceMapping",
+			"Properties" : {
+				"Enabled" : true,
+				"EventSourceArn" : {
+					"Fn::GetAtt" : [
+						"SQSQueueNotifications",
+						"Arn"
+					]
+				},
+				"FunctionName" : {
+					"Fn::GetAtt": [
+						"LambdaSQS",
+						"Arn"
+					]
+				}
+			}
+		},
+		"LambdaDLQFirst": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Code": {
+					"S3Bucket": {
+						"Fn::Sub": "${DeployLambdaBucket}"
+					},
+					"S3Key": {
+						"Fn::Sub": "${DeployLambdaFileName}"
+					}
+				},
+				"FunctionName":"lambda-dlq-first",
+				"Handler": "com.capco.sqs.handler.LambdaDLQFirst::handleRequest",
+				"MemorySize": 768,
+				"Timeout": "30",
+				"Role": {
+					"Fn::GetAtt": [
+						"NotificationLambdaRole",
+						"Arn"
+					]
+				},
+				"Runtime": "java11"
+			}
+		},
+		"LambdaSQSEventSourceMappingDLQ1":{
+			"DependsOn":"LambdaDLQFirst",
+			"Type" : "AWS::Lambda::EventSourceMapping",
+			"Properties" : {
+				"Enabled" : true,
+				"EventSourceArn" : {
+					"Fn::GetAtt" : [
+						"SQSQueueNotificationsDLQ1",
+						"Arn"
+					]
+				},
+				"FunctionName" : {
+					"Fn::GetAtt": [
+						"LambdaDLQFirst",
+						"Arn"
+					]
+				}
+			}
+		},
+		"LambdaDLQSecond": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Code": {
+					"S3Bucket": {
+						"Fn::Sub": "${DeployLambdaBucket}"
+					},
+					"S3Key": {
+						"Fn::Sub": "${DeployLambdaFileName}"
+					}
+				},
+				"FunctionName":"lambda-dlq-second",
+				"Handler": "com.capco.sqs.handler.LambdaDLQSecond::handleRequest",
+				"MemorySize": 768,
+				"Timeout": "30",
+				"Role": {
+					"Fn::GetAtt": [
+						"NotificationLambdaRole",
+						"Arn"
+					]
+				},
+				"Runtime": "java11"
+			}
+		},
+		"LambdaSQSEventSourceMappingDLQ2":{
+			"DependsOn":"LambdaDLQSecond",
+			"Type" : "AWS::Lambda::EventSourceMapping",
+			"Properties" : {
+				"Enabled" : true,
+				"EventSourceArn" : {
+					"Fn::GetAtt" : [
+						"SQSQueueNotificationsDLQ2",
+						"Arn"
+					]
+				},
+				"FunctionName" : {
+					"Fn::GetAtt": [
+						"LambdaDLQSecond",
+						"Arn"
+					]
+				}
+			}
+		}
+
+	}
+}
