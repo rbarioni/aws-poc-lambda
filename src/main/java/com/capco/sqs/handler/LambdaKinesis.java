@@ -7,10 +7,7 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
-import software.amazon.awssdk.services.sqs.model.SendMessageBatchRequest;
-import software.amazon.awssdk.services.sqs.model.SendMessageBatchRequestEntry;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
-import software.amazon.awssdk.services.sqs.model.SqsException;
 
 public class LambdaKinesis implements RequestHandler<Void, Void> {
 

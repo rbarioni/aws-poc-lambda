@@ -320,6 +320,21 @@
 					]
 				}
 			}
+		},
+
+		"CapcoTestTopic":{
+			"Type" : "AWS::SNS::Topic",
+			"Properties" : {
+				"ContentBasedDeduplication" : true,
+				"FifoTopic" : false,
+				"Subscription" : [
+					{
+						"Endpoint" : "rafael.barioni@capco.com",
+						"Protocol" : "email"
+					}
+				],
+				"TopicName" : "capco-test-sns-email"
+			}
 		}
 
 	}
