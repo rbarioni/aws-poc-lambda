@@ -325,7 +325,6 @@
 		"CapcoTestTopic":{
 			"Type" : "AWS::SNS::Topic",
 			"Properties" : {
-				"ContentBasedDeduplication" : true,
 				"FifoTopic" : false,
 				"Subscription" : [
 					{
