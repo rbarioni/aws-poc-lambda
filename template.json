@@ -19,29 +19,29 @@
 		"SQSQueueNotificationsDLQ2": {
 			"Type" : "AWS::SQS::Queue",
 			"Properties" : {
-				"VisibilityTimeout": 180,
+				"VisibilityTimeout": 60,
 				"QueueName" : "sqs-notification-enrichment-dlq-2.fifo",
 				"FifoQueue": true,
-				"DelaySeconds": 300
+				"DelaySeconds": 120
 			}
 		},
 		"SQSQueueNotificationsDLQ1": {
 			"Type" : "AWS::SQS::Queue",
 			"Properties" : {
-				"VisibilityTimeout": 180,
+				"VisibilityTimeout": 60,
 				"QueueName" : "sqs-notification-enrichment-dlq-1.fifo",
 				"FifoQueue": true,
-				"DelaySeconds": 300,
+				"DelaySeconds": 120,
 				"RedrivePolicy": { 
 					"deadLetterTargetArn" : { "Fn::GetAtt" : ["SQSQueueNotificationsDLQ2", "Arn"] },
-					"maxReceiveCount" : 4
+					"maxReceiveCount" : 3
 				}
 			}
 		},
 		"SQSQueueNotifications": {
 			"Type" : "AWS::SQS::Queue",
 			"Properties" : {
-				"VisibilityTimeout": 180,
+				"VisibilityTimeout": 60,
 				"QueueName" : "sqs-notification-enrichment.fifo",
 				"FifoQueue": true,
 				"RedrivePolicy": { 
@@ -121,6 +121,18 @@
 									}
 									]
 								},
+								{
+									"Effect": "Allow",
+									"Action": [
+										"sns:Publish"
+									],
+									"Resource": [
+									{
+										"Fn::GetAtt" : ["CapcoTestTopic", "TopicArn"]
+									}
+									]
+								},
+
 								{
 									"Effect": "Allow",
 									"Action": [
